@@ -1,10 +1,20 @@
 from pathlib import Path
+import os
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = 'your-secret-key'
 DEBUG = True
 ALLOWED_HOSTS = []
+
+# Firebase Configuration
+try:
+    from firebase_config import FIREBASE_CONFIG, FIREBASE_ADMIN_KEY_PATH
+    FIREBASE_ENABLED = True
+except ImportError:
+    FIREBASE_ENABLED = False
+    FIREBASE_CONFIG = None
+    FIREBASE_ADMIN_KEY_PATH = None
 
 INSTALLED_APPS = [
     'django.contrib.admin',

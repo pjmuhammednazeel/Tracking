@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Bus Tracker: MITS to Kolenchery</title>
+    <title>MITS Bus Tracker - Real-Time GPS</title>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
@@ -10,24 +10,90 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
 
     <style>
+        body { margin: 0; font-family: Arial, sans-serif; }
         #map { height: 100vh; }
+        .info-panel {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+            z-index: 1000;
+            min-width: 250px;
+        }
+        .status { 
+            padding: 5px 0; 
+            font-size: 14px;
+        }
+        .status.online { color: green; }
+        .status.offline { color: red; }
+        .coordinates { 
+            font-family: monospace; 
+            background: #f5f5f5; 
+            padding: 5px; 
+            border-radius: 4px;
+            margin: 5px 0;
+        }
+        .button {
+            background: #007cba;
+            color: white;
+            padding: 8px 12px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px 5px 5px 0;
+            font-size: 12px;
+        }
+        .button:hover { background: #005a8b; }
+        .button:disabled { background: #ccc; cursor: not-allowed; }
     </style>
 </head>
 <body>
     <div id="map"></div>
+    
+    <div class="info-panel">
+        <h3><i class="fas fa-bus"></i> MITS Bus Tracker</h3>
+        <div class="status" id="connection-status">
+            <i class="fas fa-circle"></i> Connecting...
+        </div>
+        <div class="coordinates" id="current-location">
+            Lat: --<br>
+            Lng: --<br>
+            Updated: --
+        </div>
+        {% if firebase_enabled %}
+        <button class="button" onclick="initializeFirebase()">
+            <i class="fas fa-sync"></i> Connect Firebase
+        </button>
+        {% endif %}
+        <button class="button" onclick="toggleSimulation()">
+            <i class="fas fa-play"></i> Toggle Demo
+        </button>
+        <button class="button" onclick="showRoute()">
+            <i class="fas fa-route"></i> Show Route
+        </button>
+        <button class="button" onclick="centerOnBus()">
+            <i class="fas fa-crosshairs"></i> Center
+        </button>
+    </div>
 
     <!-- Leaflet JS -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
     <script>
-        const map = L.map('map').setView([9.9651, 76.4085], 17);
+        // Initialize map centered on MITS
+        const map = L.map('map').setView([9.9651, 76.4085], 15);
 
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            maxZoom: 19
+            maxZoom: 19,
+            attribution: '© OpenStreetMap contributors'
         }).addTo(map);
 
+        // MITS to Kolenchery route coordinates
         const routeCoords = [
-            [9.964895591145599, 76.40958668953346],
+            [9.964895591145599, 76.40958668953346], // MITS
             [9.964901, 76.407333],
             [9.965111, 76.408159],
             [9.965217, 76.408298],
@@ -45,37 +111,173 @@
             [9.965766, 76.410509],
             [9.965787, 76.410659],
             [9.965766, 76.410809],
-            [9.965859, 76.410975]
+            [9.965859, 76.410975]  // Kolenchery direction
         ];
 
-        // Draw route
-        const polyline = L.polyline(routeCoords, { color: 'blue' }).addTo(map);
-
-        // Red bus icon (previous style)
+        // Bus icon
         const busIcon = L.divIcon({
-            html: '<i class="fas fa-bus fa-2x" style="color: red;"></i>',
+            html: '<i class="fas fa-bus fa-2x" style="color: #ff4444; text-shadow: 1px 1px 2px rgba(0,0,0,0.5);"></i>',
             className: '',
             iconSize: [30, 30],
             iconAnchor: [15, 15]
         });
 
-        // Moving marker
-        const marker = L.marker(routeCoords[0], { icon: busIcon }).addTo(map);
+        // Initialize bus marker
+        let busMarker = L.marker(routeCoords[0], { icon: busIcon }).addTo(map);
+        let routeLine = null;
+        let isSimulating = false;
+        let simulationInterval = null;
+        let currentIndex = 0;
 
-        let index = 0;
-        function moveBus() {
-            if (index < routeCoords.length) {
-                marker.setLatLng(routeCoords[index]);
-                map.panTo(routeCoords[index]);
-                index++;
-                setTimeout(moveBus, 2500); // 2.5 sec per point
+        // Firebase connection status
+        let firebaseConnected = false;
+
+        function updateConnectionStatus(status) {
+            const statusEl = document.getElementById('connection-status');
+            if (status === 'online') {
+                statusEl.innerHTML = '<i class="fas fa-circle" style="color: green;"></i> GPS Connected';
+                statusEl.className = 'status online';
+                firebaseConnected = true;
+            } else if (status === 'firebase') {
+                statusEl.innerHTML = '<i class="fas fa-database" style="color: blue;"></i> Firebase Connected';
+                statusEl.className = 'status online';
             } else {
-                index = 0;
-                moveBus(); // Loop back
+                statusEl.innerHTML = '<i class="fas fa-circle" style="color: red;"></i> Offline';
+                statusEl.className = 'status offline';
+                firebaseConnected = false;
             }
         }
 
-        moveBus();
+        function updateLocationDisplay(lat, lng, timestamp = null) {
+            const locationEl = document.getElementById('current-location');
+            const timeStr = timestamp ? new Date(timestamp).toLocaleTimeString() : 'Now';
+            locationEl.innerHTML = `Lat: ${lat.toFixed(6)}<br>Lng: ${lng.toFixed(6)}<br>Updated: ${timeStr}`;
+        }
+
+        function updateBusLocation(lat, lng, timestamp = null) {
+            const latLng = L.latLng(lat, lng);
+            busMarker.setLatLng(latLng);
+            updateLocationDisplay(lat, lng, timestamp);
+            updateConnectionStatus('online');
+        }
+
+        // Fetch latest location from server
+        function fetchLatestLocation() {
+            fetch('/api/latest/')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.lat !== 0 || data.lng !== 0) {
+                        updateBusLocation(data.lat, data.lng, data.timestamp);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching location:', error);
+                    updateConnectionStatus('offline');
+                });
+        }
+
+        // Initialize Firebase connection
+        function initializeFirebase() {
+            {% if firebase_enabled %}
+            fetch('/api/firebase/init/', { method: 'POST' })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status) {
+                        updateConnectionStatus('firebase');
+                        console.log('Firebase initialized successfully');
+                        // Start polling for Firebase updates
+                        setInterval(fetchFirebaseLocation, 3000);
+                    } else {
+                        console.error('Firebase initialization failed:', data.error);
+                    }
+                })
+                .catch(error => {
+                    console.error('Firebase initialization error:', error);
+                });
+            {% else %}
+            alert('Firebase not configured. Please set up firebase_config.py');
+            {% endif %}
+        }
+
+        // Fetch location from Firebase
+        function fetchFirebaseLocation() {
+            fetch('/api/firebase/latest/')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.lat && data.lng) {
+                        updateBusLocation(data.lat, data.lng, data.timestamp);
+                    }
+                })
+                .catch(error => console.error('Error fetching Firebase location:', error));
+        }
+
+        // Demo simulation functions
+        function toggleSimulation() {
+            if (isSimulating) {
+                clearInterval(simulationInterval);
+                isSimulating = false;
+                document.querySelector('button[onclick="toggleSimulation()"]').innerHTML = '<i class="fas fa-play"></i> Start Demo';
+            } else {
+                startSimulation();
+                isSimulating = true;
+                document.querySelector('button[onclick="toggleSimulation()"]').innerHTML = '<i class="fas fa-stop"></i> Stop Demo';
+            }
+        }
+
+        function startSimulation() {
+            simulationInterval = setInterval(() => {
+                if (currentIndex < routeCoords.length) {
+                    const [lat, lng] = routeCoords[currentIndex];
+                    updateBusLocation(lat, lng);
+                    currentIndex++;
+                } else {
+                    currentIndex = 0; // Loop back
+                }
+            }, 3000); // 3 seconds per point
+        }
+
+        function showRoute() {
+            if (routeLine) {
+                map.removeLayer(routeLine);
+                routeLine = null;
+            } else {
+                routeLine = L.polyline(routeCoords, { 
+                    color: 'blue', 
+                    weight: 4,
+                    opacity: 0.7 
+                }).addTo(map);
+                map.fitBounds(routeLine.getBounds());
+            }
+        }
+
+        function centerOnBus() {
+            map.setView(busMarker.getLatLng(), 17);
+        }
+
+        // Start with initial data fetch
+        updateConnectionStatus('offline');
+        fetchLatestLocation();
+
+        // Poll for location updates every 5 seconds
+        setInterval(fetchLatestLocation, 5000);
+
+        // Add markers for start and end points
+        L.marker(routeCoords[0], {
+            icon: L.divIcon({
+                html: '<i class="fas fa-school" style="color: green;"></i>',
+                className: '',
+                iconSize: [20, 20]
+            })
+        }).addTo(map).bindPopup("MITS College");
+
+        L.marker(routeCoords[routeCoords.length - 1], {
+            icon: L.divIcon({
+                html: '<i class="fas fa-map-marker-alt" style="color: red;"></i>',
+                className: '',
+                iconSize: [20, 20]
+            })
+        }).addTo(map).bindPopup("Kolenchery Direction");
+
     </script>
 </body>
 </html>
