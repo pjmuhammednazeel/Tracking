@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Bus Tracker: MITS to Kolenchery</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+
+    <style>
+        #map { height: 100vh; }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <script>
+        const map = L.map('map').setView([9.9651, 76.4085], 17);
+
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19
+        }).addTo(map);
+
+        const routeCoords = [
+            [9.964895591145599, 76.40958668953346],
+            [9.964901, 76.407333],
+            [9.965111, 76.408159],
+            [9.965217, 76.408298],
+            [9.965238, 76.408481],
+            [9.965322, 76.408685],
+            [9.965375, 76.408856],
+            [9.965365, 76.409114],
+            [9.965418, 76.409253],
+            [9.965502, 76.409414],
+            [9.965502, 76.409607],
+            [9.965597, 76.409758],
+            [9.965661, 76.409994],
+            [9.965713, 76.410187],
+            [9.965756, 76.410358],
+            [9.965766, 76.410509],
+            [9.965787, 76.410659],
+            [9.965766, 76.410809],
+            [9.965859, 76.410975]
+        ];
+
+        // Draw route
+        const polyline = L.polyline(routeCoords, { color: 'blue' }).addTo(map);
+
+        // Red bus icon (previous style)
+        const busIcon = L.divIcon({
+            html: '<i class="fas fa-bus fa-2x" style="color: red;"></i>',
+            className: '',
+            iconSize: [30, 30],
+            iconAnchor: [15, 15]
+        });
+
+        // Moving marker
+        const marker = L.marker(routeCoords[0], { icon: busIcon }).addTo(map);
+
+        let index = 0;
+        function moveBus() {
+            if (index < routeCoords.length) {
+                marker.setLatLng(routeCoords[index]);
+                map.panTo(routeCoords[index]);
+                index++;
+                setTimeout(moveBus, 2500); // 2.5 sec per point
+            } else {
+                index = 0;
+                moveBus(); // Loop back
+            }
+        }
+
+        moveBus();
+    </script>
+</body>
+</html>
+
