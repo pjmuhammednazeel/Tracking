@@ -77,6 +77,12 @@
         <button class="button" onclick="centerOnBus()">
             <i class="fas fa-crosshairs"></i> Center
         </button>
+        <button class="button" onclick="resetToMITS()">
+            <i class="fas fa-home"></i> MITS
+        </button>
+        <button class="button" onclick="testGPS()">
+            <i class="fas fa-location-arrow"></i> Test GPS
+        </button>
     </div>
 
     <!-- Leaflet JS -->
@@ -114,12 +120,12 @@
             [9.965859, 76.410975]  // Kolenchery direction
         ];
 
-        // Bus icon
+        // Bus icon - more visible
         const busIcon = L.divIcon({
-            html: '<i class="fas fa-bus fa-2x" style="color: #ff4444; text-shadow: 1px 1px 2px rgba(0,0,0,0.5);"></i>',
+            html: '<div style="background: white; border: 2px solid #ff4444; border-radius: 50%; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 10px rgba(0,0,0,0.3);"><i class="fas fa-bus" style="color: #ff4444; font-size: 18px;"></i></div>',
             className: '',
-            iconSize: [30, 30],
-            iconAnchor: [15, 15]
+            iconSize: [40, 40],
+            iconAnchor: [20, 20]
         });
 
         // Initialize bus marker
@@ -148,17 +154,29 @@
             }
         }
 
-        function updateLocationDisplay(lat, lng, timestamp = null) {
+        function updateLocationDisplay(lat, lng, timestamp = null, speed = null, accuracy = null) {
             const locationEl = document.getElementById('current-location');
             const timeStr = timestamp ? new Date(timestamp).toLocaleTimeString() : 'Now';
-            locationEl.innerHTML = `Lat: ${lat.toFixed(6)}<br>Lng: ${lng.toFixed(6)}<br>Updated: ${timeStr}`;
+            let html = `Lat: ${lat.toFixed(6)}<br>Lng: ${lng.toFixed(6)}<br>Updated: ${timeStr}`;
+            
+            if (speed !== null) {
+                html += `<br>Speed: ${speed} km/h`;
+            }
+            if (accuracy !== null) {
+                html += `<br>Accuracy: ${accuracy}m`;
+            }
+            
+            locationEl.innerHTML = html;
         }
 
-        function updateBusLocation(lat, lng, timestamp = null) {
+        function updateBusLocation(lat, lng, timestamp = null, speed = null, accuracy = null) {
             const latLng = L.latLng(lat, lng);
             busMarker.setLatLng(latLng);
-            updateLocationDisplay(lat, lng, timestamp);
+            updateLocationDisplay(lat, lng, timestamp, speed, accuracy);
             updateConnectionStatus('online');
+            
+            // Optionally center map on new location
+            // map.setView(latLng, 17);
         }
 
         // Fetch latest location from server
@@ -168,6 +186,8 @@
                 .then(data => {
                     if (data.lat !== 0 || data.lng !== 0) {
                         updateBusLocation(data.lat, data.lng, data.timestamp);
+                    } else {
+                        updateConnectionStatus('offline');
                     }
                 })
                 .catch(error => {
@@ -252,6 +272,36 @@
 
         function centerOnBus() {
             map.setView(busMarker.getLatLng(), 17);
+        }
+
+        function resetToMITS() {
+            const mitsLocation = [9.964895591145599, 76.40958668953346];
+            busMarker.setLatLng(mitsLocation);
+            map.setView(mitsLocation, 17);
+            updateLocationDisplay(mitsLocation[0], mitsLocation[1]);
+        }
+
+        function testGPS() {
+            // Send a test GPS coordinate
+            const testCoords = [9.9651, 76.4085];
+            fetch('/api/update/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    lat: testCoords[0],
+                    lng: testCoords[1],
+                    speed: Math.random() * 50 + 10, // Random speed 10-60 km/h
+                    accuracy: Math.random() * 10 + 2 // Random accuracy 2-12m
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log('Test GPS sent:', data);
+                updateBusLocation(testCoords[0], testCoords[1]);
+            })
+            .catch(error => console.error('Error:', error));
         }
 
         // Start with initial data fetch
