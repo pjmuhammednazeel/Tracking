@@ -36,14 +36,14 @@ TaskManager.defineTask(LOCATION_TASK_NAME, ({ data, error }) => {
         driverName: currentDriverInfo.name
       };
 
-      // Send to driver-specific Firebase path using driver ID
-      const locationRef = ref(db, `drivers/registered/${currentDriverInfo.id}/locations`);
-      push(locationRef, locationData)
+      // Send to driver-specific Firebase path using update only (replaces previous location)
+      const locationRef = ref(db, `drivers/registered/${currentDriverInfo.id}/currentLocation`);
+      set(locationRef, locationData)
         .then(() => {
-          console.log("Background location sent to Firebase successfully");
+          console.log("Background location updated in Firebase successfully");
         })
         .catch((error) => {
-          console.error("Error sending background location to Firebase:", error);
+          console.error("Error updating background location in Firebase:", error);
         });
     }
   }
@@ -130,11 +130,20 @@ export default function App() {
         loginTime: new Date().toISOString()
       };
 
+      // Restore bus number if missing (one-time fix)
+      if (!foundDriver.busNumber && driverId === "1") {
+        await restoreBusNumber(driverId, "2"); // Restore bus number 2 for driver 1
+        driver.busNumber = "2";
+      }
+
       console.log("Login successful for driver:", driver);
 
       // Update driver status to online and last login time
       await set(ref(db, `drivers/registered/${driverId}/lastActive`), driver.loginTime);
       await set(ref(db, `drivers/registered/${driverId}/status`), 'online');
+      
+      // Cleanup old locations data (one-time cleanup)
+      await cleanupOldLocations(driverId);
       
       setDriverInfo(driver);
       setIsLoggedIn(true);
@@ -219,14 +228,14 @@ export default function App() {
 
         setCurrentLocation(locationData);
 
-        // Send to driver-specific Firebase path using driver ID
-        const locationRef = ref(db, `drivers/registered/${driverInfo.id}/locations`);
-        push(locationRef, locationData)
+        // Send to driver-specific Firebase path using update only (replaces previous location)
+        const locationRef = ref(db, `drivers/registered/${driverInfo.id}/currentLocation`);
+        set(locationRef, locationData)
           .then(() => {
-            console.log("Location sent to Firebase successfully");
+            console.log("Location updated in Firebase successfully");
           })
           .catch((error) => {
-            console.error("Error sending to Firebase:", error);
+            console.error("Error updating location in Firebase:", error);
           });
       }
     );
@@ -259,6 +268,27 @@ export default function App() {
     
     setTracking(false);
     setCurrentLocation(null);
+  };
+
+  // Cleanup function to remove old locations data
+  const cleanupOldLocations = async (driverId) => {
+    try {
+      const oldLocationsRef = ref(db, `drivers/registered/${driverId}/locations`);
+      await set(oldLocationsRef, null); // This removes the locations node
+      console.log("Old locations data cleaned up for driver:", driverId);
+    } catch (error) {
+      console.error("Error cleaning up old locations:", error);
+    }
+  };
+
+  // Function to restore missing bus number
+  const restoreBusNumber = async (driverId, busNumber) => {
+    try {
+      await set(ref(db, `drivers/registered/${driverId}/busNumber`), busNumber);
+      console.log("Bus number restored for driver:", driverId);
+    } catch (error) {
+      console.error("Error restoring bus number:", error);
+    }
   };
 
   // Login Screen Component
